@@ -22,6 +22,7 @@ import android.view.Gravity
 import android.view.View
 import android.widget.FrameLayout
 import android.widget.GridLayout
+import android.widget.HorizontalScrollView
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ScrollView
@@ -159,7 +160,13 @@ class MainActivity : Activity() {
             background = GradientDrawable().apply { cornerRadius = dp(36).toFloat(); setColor(0x66000000) }
         }
         bottom.addView(focusLabel)
-        bottom.addView(dock)
+        bottom.addView(HorizontalScrollView(this).apply {
+            isHorizontalScrollBarEnabled = false
+            clipChildren = false
+            clipToPadding = false
+            setPadding(dp(24), dp(12), dp(24), dp(12))
+            addView(dock)
+        }, LinearLayout.LayoutParams(-2, -2))
         root.addView(bottom, FrameLayout.LayoutParams(-2, -2, Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL).apply {
             bottomMargin = dp(48)
         })
@@ -183,12 +190,14 @@ class MainActivity : Activity() {
 
     // ---------- wallpapers ----------
 
-    private fun wallDir(): File = File(getExternalFilesDir(null), "wallpapers").apply { mkdirs() }
+    // Internal dir is fillable over adb with `run-as` (Android 11 blocks adb from Android/data).
+    private fun wallDirs(): List<File> = listOfNotNull(filesDir, getExternalFilesDir(null))
+        .map { File(it, "wallpapers").apply { mkdirs() } }
 
     private fun nextBackground() {
-        val files = wallDir().listFiles { f ->
-            f.extension.lowercase() in listOf("jpg", "jpeg", "png", "webp")
-        }?.sortedBy { it.name } ?: emptyList()
+        val files = wallDirs().flatMap { d ->
+            d.listFiles { f -> f.extension.lowercase() in listOf("jpg", "jpeg", "png", "webp") }?.toList() ?: emptyList()
+        }.sortedBy { it.name }
         val n = idx++
         if (files.isEmpty()) {
             show(GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM, skies[n % skies.size]))
@@ -263,7 +272,7 @@ class MainActivity : Activity() {
             setImageDrawable(icon)
             scaleType = ImageView.ScaleType.FIT_CENTER
             setPadding(dp(8), dp(8), dp(8), dp(8))
-            layoutParams = LinearLayout.LayoutParams(dp(96), dp(96)).apply { setMargins(dp(10), 0, dp(10), 0) }
+            layoutParams = LinearLayout.LayoutParams(dp(80), dp(80)).apply { setMargins(dp(6), 0, dp(6), 0) }
             isFocusable = true
             setOnClickListener { onClick() }
             if (onLong != null) setOnLongClickListener { onLong(); true }
