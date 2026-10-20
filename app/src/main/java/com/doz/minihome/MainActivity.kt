@@ -135,7 +135,7 @@ class MainActivity : Activity() {
         isVerticalScrollBarEnabled = false
         clipChildren = false
         clipToPadding = false
-        addView(content)
+        addView(content, FrameLayout.LayoutParams(-1, -2))
     }
 
     private fun buildUi() {
