@@ -101,6 +101,8 @@ class MainActivity : Activity() {
 
     override fun onResume() {
         super.onResume()
+        // TV slept while on an HDMI input (e.g. PS5): go straight back to it on wake.
+        if (InputActivity.resumeAfterWake(this)) return
         main.removeCallbacks(rot); main.post(rot)
         main.removeCallbacks(tick); main.post(tick)
         if (dock.focusedChild == null && picker.visibility != View.VISIBLE) focusFirst()
@@ -466,9 +468,7 @@ class MainActivity : Activity() {
     }
 
     private fun openInput(h: Hdmi) {
-        startActivity(Intent(this, InputActivity::class.java)
-            .putExtra(InputActivity.EXTRA_ID, h.id)
-            .putExtra(InputActivity.EXTRA_NAME, h.port))
+        startActivity(InputActivity.intent(this, h.id, h.port))
     }
 
     private fun openSettings() {
