@@ -47,6 +47,8 @@ class GlassDock(ctx: Context, private val ui: Ui) : LinearLayout(ctx) {
         // No elevation: the dock is translucent, so a shadow would show through it.
     }
 
+    fun releaseBlur() { prev = null; cur = null; mix = 1f; invalidate() }
+
     fun setBlur(b: Bitmap?) {
         prev = cur; cur = b
         ValueAnimator.ofFloat(0f, 1f).apply {
@@ -101,7 +103,12 @@ class NeonGlow(ctx: Context, private val ui: Ui, private val pad: Int, private v
 
     override fun onSizeChanged(w: Int, h: Int, ow: Int, oh: Int) {
         if (w <= 0 || h <= 0) return
-        art?.recycle()
+        // Every tile of the same size shares one glow bitmap.
+        val key = "$w:$h:$pad:$corner"
+        art = cache.getOrPut(key) { render(w, h) }
+    }
+
+    private fun render(w: Int, h: Int): Bitmap {
         val b = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
         val c = Canvas(b)
         val stroke = ui.pxf(2.5f).coerceAtLeast(2f)
@@ -119,8 +126,10 @@ class NeonGlow(ctx: Context, private val ui: Ui, private val pad: Int, private v
         c.drawRoundRect(r, corner + o, corner + o, Paint(Paint.ANTI_ALIAS_FLAG).apply {
             style = Paint.Style.STROKE; strokeWidth = stroke; color = Ui.NEON
         })
-        art = b
+        return b
     }
 
     override fun onDraw(c: Canvas) { art?.let { c.drawBitmap(it, 0f, 0f, null) } }
+
+    companion object { private val cache = HashMap<String, Bitmap>() }
 }

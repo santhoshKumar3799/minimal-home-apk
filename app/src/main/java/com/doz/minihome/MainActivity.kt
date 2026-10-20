@@ -113,6 +113,21 @@ class MainActivity : Activity() {
         main.removeCallbacks(rot); main.removeCallbacks(tick)
     }
 
+    override fun onStop() {
+        super.onStop()
+        started = false
+        releaseWallpapers()
+        if (picker.visibility != View.VISIBLE) pickerGrid.removeAllViews()
+    }
+
+    override fun onTrimMemory(level: Int) {
+        super.onTrimMemory(level)
+        if (level >= android.content.ComponentCallbacks2.TRIM_MEMORY_UI_HIDDEN) releaseWallpapers()
+    }
+
+    override fun onStart() { super.onStart(); started = true }
+    private var started = false
+
     override fun onNewIntent(intent: Intent?) {
         super.onNewIntent(intent)
         if (picker.visibility == View.VISIBLE) closePicker() else focusFirst()
@@ -244,7 +259,7 @@ class MainActivity : Activity() {
         thread {
             val bmp = decode(f) ?: return@thread
             val blur = try { blurSmall(Bitmap.createScaledBitmap(bmp, 160, 90, true)) } catch (e: Throwable) { null }
-            main.post { show(BitmapDrawable(resources, bmp)); dock.setBlur(blur) }
+            main.post { if (started) { show(BitmapDrawable(resources, bmp)); dock.setBlur(blur) } }
         }
     }
 
@@ -253,16 +268,29 @@ class MainActivity : Activity() {
         BitmapFactory.decodeFile(f.path, o)
         var s = 1
         while (o.outWidth / (s * 2) >= 1920) s *= 2
-        BitmapFactory.decodeFile(f.path, BitmapFactory.Options().apply { inSampleSize = s })
+        // RGB_565: half the memory of ARGB_8888, no visible difference for photos on a TV.
+        BitmapFactory.decodeFile(f.path, BitmapFactory.Options().apply {
+            inSampleSize = s; inPreferredConfig = Bitmap.Config.RGB_565
+        })
     } catch (e: Throwable) { null }
+
+    /** Drop wallpaper bitmaps while another app / HDMI is in front; they reload on return. */
+    private fun releaseWallpapers() {
+        main.removeCallbacks(rot)
+        if (wallA.drawable == null && wallB.drawable == null) return
+        for (v in listOf(wallA, wallB)) { v.animate().cancel(); v.setImageDrawable(null) }
+        dock.releaseBlur()
+        idx = maxOf(0, idx - 1)   // come back to the same picture
+    }
 
     private fun show(d: Drawable) {
         val inV = if (showingA) wallB else wallA
         val outV = if (showingA) wallA else wallB
+        val firstFrame = outV.drawable == null   // returning to Home: no fade from black
         inV.setImageDrawable(d)
-        inV.alpha = 0f
+        inV.alpha = if (firstFrame) 1f else 0f
         inV.scaleX = 1.04f; inV.scaleY = 1.04f
-        inV.animate().alpha(1f).setDuration(1600).start()
+        if (!firstFrame) inV.animate().alpha(1f).setDuration(1600).start()
         inV.animate().scaleX(1.12f).scaleY(1.12f).setDuration(22_000).start()
         outV.animate().alpha(0f).setDuration(1600).start()
         showingA = !showingA
