@@ -1,43 +1,39 @@
 package com.doz.minihome
 
 import android.accessibilityservice.AccessibilityService
+import android.content.BroadcastReceiver
+import android.content.Context
 import android.content.Intent
-import android.os.Handler
-import android.os.Looper
+import android.content.IntentFilter
 import android.os.SystemClock
-import android.view.KeyEvent
 import android.view.accessibility.AccessibilityEvent
 
 /**
- * Fire OS won't let another app be Home and won't let its launcher be disabled.
+ * Fire OS won't let another app be Home and won't let its launcher be disabled, and it handles
+ * the Home key at system level (accessibility key filtering never sees it).
  *
- * Fast path: catch the remote's Home key before Fire OS acts on it and open Minimal Home
- * directly (no Amazon home flash, no wait). A long press still opens Amazon's quick menu.
+ * Fast path: the system broadcasts CLOSE_SYSTEM_DIALOGS(reason=homekey) the moment Home is
+ * pressed, before Amazon's home has loaded (~3.5 s). Open Minimal Home right then.
  * Fallback: if Amazon's home screen comes to the front anyway (boot, apps that call Home),
  * bring Minimal Home forward.
  *
  * Enable:  settings put secure enabled_accessibility_services com.doz.minihome/com.doz.minihome.HomeWatcher
  */
 class HomeWatcher : AccessibilityService() {
-    private val main = Handler(Looper.getMainLooper())
-    private var homeDown = false
-    private var longFired = false
-    private val longPress = Runnable { longFired = true; openQuickMenu() }
-
-    override fun onKeyEvent(e: KeyEvent): Boolean {
-        if (e.keyCode != KeyEvent.KEYCODE_HOME) return false
-        when (e.action) {
-            KeyEvent.ACTION_DOWN -> if (e.repeatCount == 0) {
-                homeDown = true; longFired = false
-                main.postDelayed(longPress, LONG_PRESS_MS)
-            }
-            KeyEvent.ACTION_UP -> {
-                main.removeCallbacks(longPress)
-                if (homeDown && !longFired) openHome()
-                homeDown = false
-            }
+    private val homeKey = object : BroadcastReceiver() {
+        override fun onReceive(c: Context, i: Intent) {
+            if (i.getStringExtra("reason") == "homekey" && SystemClock.uptimeMillis() >= pauseUntil) openHome()
         }
-        return true   // Fire OS never sees Home, so its launcher never starts
+    }
+
+    override fun onServiceConnected() {
+        super.onServiceConnected()
+        registerReceiver(homeKey, IntentFilter(Intent.ACTION_CLOSE_SYSTEM_DIALOGS))
+    }
+
+    override fun onDestroy() {
+        try { unregisterReceiver(homeKey) } catch (e: Exception) { }
+        super.onDestroy()
     }
 
     override fun onAccessibilityEvent(e: AccessibilityEvent?) {
@@ -53,17 +49,10 @@ class HomeWatcher : AccessibilityService() {
             Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_REORDER_TO_FRONT or Intent.FLAG_ACTIVITY_NO_ANIMATION))
     }
 
-    private fun openQuickMenu() {
-        try {
-            sendBroadcast(Intent("com.amazon.tv.action.HOME_LONGPRESSED").setPackage("com.amazon.tv.quicksettings.ui"))
-        } catch (e: Exception) { }
-    }
-
     override fun onInterrupt() {}
 
     companion object {
         const val AMAZON_LAUNCHER = "com.amazon.tv.launcher"
-        private const val LONG_PRESS_MS = 600L
 
         // Fire OS Settings lives in the Amazon launcher and passes through its HomeActivity on
         // the way in, so stand down briefly when we open it ourselves.
