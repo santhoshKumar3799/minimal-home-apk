@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="home_watcher_desc">Opens Minimal Home when the Home button brings up the Amazon home screen.</string>
+</resources>
