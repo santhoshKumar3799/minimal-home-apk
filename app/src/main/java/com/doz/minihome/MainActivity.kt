@@ -321,7 +321,8 @@ class MainActivity : Activity() {
                     outline.setRoundRect(0, 0, view.width, view.height, corner)
             }
             face.clipToOutline = true
-            face.elevation = ui.pxf(8f)
+            // No shadow on glass: Android's shadow core shows through translucent tiles as a dark box.
+            face.elevation = if (glassy) 0f else ui.pxf(8f)
             fill(face)
             face.foreground = GradientDrawable(GradientDrawable.Orientation.TL_BR,
                 intArrayOf(0x38FFFFFF, 0x00FFFFFF, 0x00FFFFFF)).apply { cornerRadius = corner }

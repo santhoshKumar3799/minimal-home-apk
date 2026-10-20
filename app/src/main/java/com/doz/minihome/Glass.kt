@@ -44,7 +44,7 @@ class GlassDock(ctx: Context, private val ui: Ui) : LinearLayout(ctx) {
             override fun getOutline(view: View, outline: Outline) =
                 outline.setRoundRect(0, 0, view.width, view.height, radius)
         }
-        elevation = ui.pxf(24f)
+        // No elevation: the dock is translucent, so a shadow would show through it.
     }
 
     fun setBlur(b: Bitmap?) {
