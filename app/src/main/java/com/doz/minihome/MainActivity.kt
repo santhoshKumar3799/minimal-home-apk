@@ -163,11 +163,14 @@ class MainActivity : Activity() {
         root.addView(dock, FrameLayout.LayoutParams(-2, -2, Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL).apply {
             bottomMargin = ui.px(70f)
         })
+        dock.addOnLayoutChangeListener(relayout)
+        label.addOnLayoutChangeListener(relayout)
 
         caption = ui.text(TextView(this), 13f, 400, 5f).apply { text = "INPUTS"; alpha = .75f }
         root.addView(caption, FrameLayout.LayoutParams(-2, -2, Gravity.BOTTOM or Gravity.START).apply {
             bottomMargin = ui.px(34f)
         })
+        caption.addOnLayoutChangeListener(relayout)
 
         picker = FrameLayout(this).apply {
             visibility = View.GONE
@@ -429,22 +432,32 @@ class MainActivity : Activity() {
         add(glassTile(size, LineIcon.Kind.GEAR, null), "Settings", null, { openSettings() })
 
         caption.visibility = if (inputCells.isEmpty()) View.GONE else View.VISIBLE
-        dock.post {
-            if (inputCells.isNotEmpty()) {
-                val mid = (inputCells.first().left + inputCells.last().right) / 2f
-                caption.translationX = dock.left + mid - caption.width / 2f
-            }
-            if (dock.focusedChild == null) focusFirst()
+        this.inputCells = inputCells
+        dock.post { if (dock.focusedChild == null) focusFirst() }
+    }
+
+    private var inputCells: List<View> = emptyList()
+    private var labelCell: View? = null
+    private val relayout = View.OnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> placeOverlays(false) }
+
+    // Label and caption are positioned from the dock's layout, so redo it whenever that changes
+    // (on a cold start the first focus happens before the dock has been laid out).
+    private fun placeOverlays(animate: Boolean) {
+        if (dock.width == 0) return
+        if (inputCells.isNotEmpty()) {
+            val mid = (inputCells.first().left + inputCells.last().right) / 2f
+            caption.translationX = dock.left + mid - caption.width / 2f
         }
+        val cell = labelCell ?: return
+        val x = dock.left + cell.left + cell.width / 2f - label.width / 2f
+        if (animate && labelPlaced) label.animate().translationX(x).alpha(1f).setDuration(220).start()
+        else { label.animate().cancel(); label.translationX = x; label.alpha = 1f; labelPlaced = true }
     }
 
     private fun showLabel(cell: View, name: String, sub: String?) {
+        labelCell = cell
         label.text = if (sub != null) "${name.uppercase()}   ·   ${sub.uppercase()}" else name.uppercase()
-        label.post {
-            val x = dock.left + cell.left + cell.width / 2f - label.width / 2f
-            if (!labelPlaced) { label.translationX = x; label.alpha = 1f; labelPlaced = true }
-            else label.animate().translationX(x).alpha(1f).setDuration(220).start()
-        }
+        label.post { placeOverlays(true) }
     }
 
     private fun launch(i: Intent) {
