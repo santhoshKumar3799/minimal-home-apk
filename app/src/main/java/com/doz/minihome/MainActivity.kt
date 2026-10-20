@@ -339,12 +339,25 @@ class MainActivity : Activity() {
 
     private fun appTile(pkg: String, size: Int): Tile? {
         val icon = try { packageManager.getApplicationIcon(pkg) } catch (e: Exception) { return null }
+        val iw = icon.intrinsicWidth; val ih = icon.intrinsicHeight
+        val square = iw <= 0 || ih <= 0 || iw.toFloat() / ih in 0.85f..1.18f
         return Tile(size, false) { face ->
+            // Wide/tall icons would be cropped; fit them on their own edge colour instead.
+            if (!square) (face.background as? GradientDrawable)?.setColor(edgeColor(icon))
             face.addView(ImageView(this).apply {
-                setImageDrawable(icon); scaleType = ImageView.ScaleType.CENTER_CROP
+                setImageDrawable(icon)
+                scaleType = if (square) ImageView.ScaleType.CENTER_CROP else ImageView.ScaleType.FIT_CENTER
             }, FrameLayout.LayoutParams(-1, -1))
         }
     }
+
+    private fun edgeColor(d: Drawable): Int = try {
+        val b = Bitmap.createBitmap(24, 24, Bitmap.Config.ARGB_8888)
+        val old = d.copyBounds()
+        d.setBounds(0, 0, 24, 24); d.draw(Canvas(b)); d.bounds = old
+        val c = b.getPixel(1, 12); b.recycle()
+        if (Color.alpha(c) < 200) 0xFF1B1D21.toInt() else c or 0xFF000000.toInt()
+    } catch (e: Exception) { 0xFF1B1D21.toInt() }
 
     private fun glassTile(size: Int, kind: LineIcon.Kind, port: String?) = Tile(size, true) { face ->
         val s = size / 104f

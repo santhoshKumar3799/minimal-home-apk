@@ -90,26 +90,37 @@ class GlassDock(ctx: Context, private val ui: Ui) : LinearLayout(ctx) {
     }
 }
 
-/** Cold neon ring + glow drawn around a focused tile (software layer for BlurMaskFilter). */
+/**
+ * Cold neon ring + glow around a focused tile. Fire OS's GPU renderer ignores BlurMaskFilter,
+ * so the glow is rendered once into a bitmap with a software Canvas and then just drawn.
+ */
 class NeonGlow(ctx: Context, private val ui: Ui, private val pad: Int, private val corner: Float) : View(ctx) {
-    private val ring = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        style = Paint.Style.STROKE; strokeWidth = ui.pxf(2f).coerceAtLeast(1.5f); color = Ui.NEON
-    }
-    private val inner = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = 0xBF6FD6FF.toInt(); maskFilter = BlurMaskFilter(ui.pxf(14f), BlurMaskFilter.Blur.OUTER)
-    }
-    private val outer = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = 0x731E7BFF; maskFilter = BlurMaskFilter(ui.pxf(46f), BlurMaskFilter.Blur.OUTER)
-    }
-    private val r = RectF()
+    private var art: Bitmap? = null
 
-    init { setLayerType(LAYER_TYPE_SOFTWARE, null); alpha = 0f }
+    init { alpha = 0f }
 
-    override fun onDraw(c: Canvas) {
-        r.set(pad.toFloat(), pad.toFloat(), (width - pad).toFloat(), (height - pad).toFloat())
+    override fun onSizeChanged(w: Int, h: Int, ow: Int, oh: Int) {
+        if (w <= 0 || h <= 0) return
+        art?.recycle()
+        val b = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
+        val c = Canvas(b)
+        val stroke = ui.pxf(2.5f).coerceAtLeast(2f)
+        // ring sits just outside the tile edge so the tile never covers it
+        val o = stroke / 2 + 1f
+        val r = RectF(pad - o, pad - o, w - pad + o, h - pad + o)
         val e = ui.pxf(8f)
-        c.drawRoundRect(r.left - e, r.top - e, r.right + e, r.bottom + e, corner + e, corner + e, outer)
-        c.drawRoundRect(r, corner, corner, inner)
-        c.drawRoundRect(r, corner, corner, ring)
+        c.drawRoundRect(r.left - e, r.top - e, r.right + e, r.bottom + e, corner + e, corner + e,
+            Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                color = 0x801E7BFF.toInt(); maskFilter = BlurMaskFilter(ui.pxf(40f), BlurMaskFilter.Blur.OUTER)
+            })
+        c.drawRoundRect(r, corner + o, corner + o, Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = 0xCC6FD6FF.toInt(); maskFilter = BlurMaskFilter(ui.pxf(14f), BlurMaskFilter.Blur.OUTER)
+        })
+        c.drawRoundRect(r, corner + o, corner + o, Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            style = Paint.Style.STROKE; strokeWidth = stroke; color = Ui.NEON
+        })
+        art = b
     }
+
+    override fun onDraw(c: Canvas) { art?.let { c.drawBitmap(it, 0f, 0f, null) } }
 }
