@@ -4,5 +4,7 @@
     android:accessibilityEventTypes="typeWindowStateChanged"
     android:packageNames="com.amazon.tv.launcher"
     android:accessibilityFeedbackType="feedbackGeneric"
+    android:accessibilityFlags="flagRequestFilterKeyEvents"
+    android:canRequestFilterKeyEvents="true"
     android:notificationTimeout="0"
     android:canRetrieveWindowContent="false" />
