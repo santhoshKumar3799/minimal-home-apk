@@ -20,9 +20,9 @@ import android.provider.Settings
 import android.text.TextUtils
 import android.view.Gravity
 import android.view.View
+import android.view.ViewGroup
 import android.widget.FrameLayout
 import android.widget.GridLayout
-import android.widget.HorizontalScrollView
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ScrollView
@@ -34,6 +34,7 @@ import java.util.Date
 import java.util.Locale
 import kotlin.concurrent.thread
 
+// Apple-TV-style home: full-screen "top shelf" wallpaper, 5-column grid of 16:9 app cards.
 class MainActivity : Activity() {
 
     private val ui = Handler(Looper.getMainLooper())
@@ -41,15 +42,16 @@ class MainActivity : Activity() {
     private lateinit var bgA: ImageView
     private lateinit var bgB: ImageView
     private lateinit var clock: TextView
-    private lateinit var dateTv: TextView
-    private lateinit var focusLabel: TextView
-    private lateinit var dock: LinearLayout
+    private lateinit var home: GridLayout
     private lateinit var picker: FrameLayout
-    private lateinit var grid: GridLayout
+    private lateinit var pickerGrid: GridLayout
     private var showingA = true
     private var idx = 0
 
     private val rotateMs = 120_000L
+    private val cols = 5
+    private var cardW = 0
+    private var cardH = 0
 
     // Used only when you have not pushed any wallpapers yet.
     private val skies = listOf(
@@ -59,7 +61,7 @@ class MainActivity : Activity() {
         intArrayOf(0xFF1B2A49.toInt(), 0xFF5C7AEA.toInt())
     )
 
-    // First-run dock. Only apps actually installed are used; edit later from "All apps".
+    // First-run dock. Only apps actually installed are used; edit later from "All Apps".
     private val defaults = listOf(
         "com.amazon.firetv.youtube", "com.netflix.ninja", "com.amazon.firebat",
         "in.startv.hotstar", "com.fancode.tv", "tv.airtel.xstream.tvapp", "com.amazon.venezia"
@@ -70,9 +72,7 @@ class MainActivity : Activity() {
     }
     private val tick = object : Runnable {
         override fun run() {
-            val now = Date()
-            clock.text = SimpleDateFormat("h:mm", Locale.getDefault()).format(now)
-            dateTv.text = SimpleDateFormat("EEEE, d MMMM", Locale.getDefault()).format(now)
+            clock.text = SimpleDateFormat("h:mm", Locale.getDefault()).format(Date())
             ui.postDelayed(this, 20_000)
         }
     }
@@ -80,15 +80,19 @@ class MainActivity : Activity() {
     override fun onCreate(b: Bundle?) {
         super.onCreate(b)
         prefs = getSharedPreferences("home", MODE_PRIVATE)
+        val sw = resources.displayMetrics.widthPixels
+        val side = dp(64); val gap = dp(28)
+        cardW = (sw - 2 * side - (cols - 1) * gap) / cols
+        cardH = cardW * 9 / 16
         buildUi()
-        refreshDock()
+        refreshHome()
     }
 
     override fun onResume() {
         super.onResume()
         ui.removeCallbacks(rot); ui.post(rot)
         ui.removeCallbacks(tick); ui.post(tick)
-        if (dock.focusedChild == null && picker.visibility != View.VISIBLE) dock.getChildAt(0)?.requestFocus()
+        if (home.focusedChild == null && picker.visibility != View.VISIBLE) home.getChildAt(0)?.requestFocus()
     }
 
     override fun onPause() {
@@ -98,7 +102,7 @@ class MainActivity : Activity() {
 
     override fun onNewIntent(intent: Intent?) {
         super.onNewIntent(intent)
-        if (picker.visibility == View.VISIBLE) closePicker() else dock.getChildAt(0)?.requestFocus()
+        if (picker.visibility == View.VISIBLE) closePicker() else home.getChildAt(0)?.requestFocus()
     }
 
     override fun onBackPressed() {
@@ -120,69 +124,77 @@ class MainActivity : Activity() {
         layoutParams = FrameLayout.LayoutParams(-1, -1)
     }
 
-    private fun ring() = GradientDrawable().apply {
-        cornerRadius = dp(22).toFloat()
-        setStroke(dp(3), Color.WHITE)
-        setColor(0x33FFFFFF)
+    private fun grid() = GridLayout(this).apply {
+        columnCount = cols
+        clipChildren = false
+        clipToPadding = false
+    }
+
+    // Vertical scroller that never clips the lifted (scaled) focused card.
+    private fun scroller(content: View) = ScrollView(this).apply {
+        isVerticalScrollBarEnabled = false
+        clipChildren = false
+        clipToPadding = false
+        addView(content)
     }
 
     private fun buildUi() {
+        val sh = resources.displayMetrics.heightPixels
         val root = FrameLayout(this).apply { setBackgroundColor(Color.BLACK); clipChildren = false }
         bgA = bg(); bgB = bg(); bgB.alpha = 0f
         root.addView(bgA); root.addView(bgB)
 
+        // Top shelf stays clear; the app area below fades to dark.
         root.addView(View(this).apply {
             background = GradientDrawable(
-                GradientDrawable.Orientation.BOTTOM_TOP,
-                intArrayOf(0xCC000000.toInt(), 0x00000000)
+                GradientDrawable.Orientation.TOP_BOTTOM,
+                intArrayOf(0x00000000, 0x33000000, 0xE6000000.toInt())
             )
-        }, FrameLayout.LayoutParams(-1, dp(420), Gravity.BOTTOM))
+        }, FrameLayout.LayoutParams(-1, -1))
+        root.addView(View(this).apply {
+            background = GradientDrawable(
+                GradientDrawable.Orientation.TOP_BOTTOM,
+                intArrayOf(0x66000000, 0x00000000)
+            )
+        }, FrameLayout.LayoutParams(-1, dp(140), Gravity.TOP))
 
-        val top = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(dp(64), dp(40), 0, 0)
-        }
-        clock = tv(72f, true); dateTv = tv(20f)
-        top.addView(clock); top.addView(dateTv)
-        root.addView(top, FrameLayout.LayoutParams(-2, -2))
+        clock = tv(26f, true)
+        root.addView(clock, FrameLayout.LayoutParams(-2, -2, Gravity.TOP or Gravity.END).apply {
+            setMargins(0, dp(32), dp(64), 0)
+        })
 
-        val bottom = LinearLayout(this).apply {
+        home = grid()
+        val homeWrap = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER_HORIZONTAL
             clipChildren = false
-        }
-        focusLabel = tv(22f)
-        dock = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER
-            clipChildren = false
-            setPadding(dp(16), dp(20), dp(16), dp(20))
-            background = GradientDrawable().apply { cornerRadius = dp(36).toFloat(); setColor(0x66000000) }
-        }
-        bottom.addView(focusLabel)
-        bottom.addView(HorizontalScrollView(this).apply {
-            isHorizontalScrollBarEnabled = false
-            clipChildren = false
             clipToPadding = false
-            setPadding(dp(24), dp(12), dp(24), dp(12))
-            addView(dock)
-        }, LinearLayout.LayoutParams(-2, -2))
-        root.addView(bottom, FrameLayout.LayoutParams(-2, -2, Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL).apply {
-            bottomMargin = dp(48)
-        })
+            setPadding(0, (sh * 0.50).toInt(), 0, dp(48))
+            addView(home)
+        }
+        root.addView(scroller(homeWrap), FrameLayout.LayoutParams(-1, -1))
 
         picker = FrameLayout(this).apply {
             visibility = View.GONE
             isClickable = true
-            setBackgroundColor(0xEE000000.toInt())
+            setBackgroundColor(0xF2101012.toInt())
         }
-        grid = GridLayout(this).apply {
-            columnCount = 6
-            setPadding(dp(48), dp(96), dp(48), dp(48))
+        pickerGrid = grid()
+        val pickerWrap = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER_HORIZONTAL
+            clipChildren = false
+            clipToPadding = false
+            setPadding(0, dp(40), 0, dp(48))
+            addView(tv(34f).apply { text = "All Apps" })
+            addView(tv(16f).apply {
+                text = "OK  add / remove from Home      Back  done"
+                alpha = 0.6f
+                setPadding(0, dp(4), 0, dp(28))
+            })
+            addView(pickerGrid)
         }
-        picker.addView(ScrollView(this).apply { addView(grid) }, FrameLayout.LayoutParams(-1, -1))
-        picker.addView(tv(18f).apply { text = "OK = add / remove from dock     Back = done" },
-            FrameLayout.LayoutParams(-2, -2, Gravity.TOP or Gravity.START).apply { setMargins(dp(48), dp(40), 0, 0) })
+        picker.addView(scroller(pickerWrap), FrameLayout.LayoutParams(-1, -1))
         root.addView(picker, FrameLayout.LayoutParams(-1, -1))
 
         setContentView(root)
@@ -252,52 +264,103 @@ class MainActivity : Activity() {
         packageManager.getApplicationLabel(packageManager.getApplicationInfo(pkg, 0)).toString()
     } catch (e: Exception) { pkg }
 
-    // ---------- dock ----------
+    // ---------- cards ----------
 
-    private fun glyph(text: String): Drawable {
+    private class Art(val drawable: Drawable, val isBanner: Boolean)
+
+    // Prefer the app's 16:9 TV banner (what Fire TV shows); fall back to its icon.
+    private fun art(pkg: String): Art? {
+        val pm = packageManager
+        val banner = try {
+            launchIntent(pkg)?.component?.let { pm.getActivityBanner(it) } ?: pm.getApplicationBanner(pkg)
+        } catch (e: Exception) { null }
+        if (banner != null) return Art(banner, true)
+        return try { Art(pm.getApplicationIcon(pkg), false) } catch (e: Exception) { null }
+    }
+
+    private fun glyph(text: String, size: Float): Drawable {
         val bmp = Bitmap.createBitmap(256, 256, Bitmap.Config.ARGB_8888)
         val c = Canvas(bmp)
-        val p = Paint(Paint.ANTI_ALIAS_FLAG)
-        p.color = 0x44FFFFFF
-        c.drawRoundRect(0f, 0f, 256f, 256f, 56f, 56f, p)
-        p.color = Color.WHITE
-        p.textSize = 110f
-        p.textAlign = Paint.Align.CENTER
+        val p = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.WHITE
+            textSize = size
+            textAlign = Paint.Align.CENTER
+            typeface = Typeface.create("sans-serif-light", Typeface.NORMAL)
+        }
         c.drawText(text, 128f, 128f - (p.descent() + p.ascent()) / 2, p)
         return BitmapDrawable(resources, bmp)
     }
 
-    private fun tile(icon: Drawable, label: String, onClick: () -> Unit, onLong: (() -> Unit)?): View =
-        ImageView(this).apply {
-            setImageDrawable(icon)
-            scaleType = ImageView.ScaleType.FIT_CENTER
-            setPadding(dp(8), dp(8), dp(8), dp(8))
-            layoutParams = LinearLayout.LayoutParams(dp(80), dp(80)).apply { setMargins(dp(6), 0, dp(6), 0) }
+    private fun card(
+        art: Art, name: String, alwaysLabel: Boolean,
+        onClick: (TextView) -> Unit, onLong: (() -> Unit)?
+    ): View {
+        val face = FrameLayout(this).apply {
+            background = GradientDrawable().apply {
+                cornerRadius = dp(14).toFloat()
+                setColor(if (art.isBanner) 0xFF202024.toInt() else 0x40FFFFFF)
+            }
+            clipToOutline = true
+            elevation = dp(4).toFloat()
+            addView(ImageView(this@MainActivity).apply {
+                setImageDrawable(art.drawable)
+                if (art.isBanner) {
+                    scaleType = ImageView.ScaleType.CENTER_CROP
+                } else {
+                    scaleType = ImageView.ScaleType.FIT_CENTER
+                    setPadding(cardH / 5, cardH / 5, cardH / 5, cardH / 5)
+                }
+            }, FrameLayout.LayoutParams(-1, -1))
+        }
+        val label = tv(15f).apply {
+            text = name
+            gravity = Gravity.CENTER
+            maxLines = 1
+            ellipsize = TextUtils.TruncateAt.END
+            setPadding(0, dp(10), 0, 0)
+            alpha = if (alwaysLabel) 0.75f else 0f
+        }
+        return LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            clipChildren = false
             isFocusable = true
-            setOnClickListener { onClick() }
+            addView(face, LinearLayout.LayoutParams(cardW, cardH))
+            addView(label, LinearLayout.LayoutParams(cardW, ViewGroup.LayoutParams.WRAP_CONTENT))
+            setOnClickListener { onClick(label) }
             if (onLong != null) setOnLongClickListener { onLong(); true }
-            setOnFocusChangeListener { v, f ->
-                val s = if (f) 1.25f else 1f
-                v.animate().scaleX(s).scaleY(s).setDuration(120).start()
-                v.background = if (f) ring() else null
-                if (f) focusLabel.text = label
+            setOnFocusChangeListener { _, f ->
+                val s = if (f) 1.12f else 1f
+                face.animate().scaleX(s).scaleY(s).translationZ(if (f) dp(18).toFloat() else 0f)
+                    .setDuration(150).start()
+                label.animate().alpha(if (f) 1f else if (alwaysLabel) 0.75f else 0f)
+                    .translationY(if (f) dp(8).toFloat() else 0f).setDuration(150).start()
             }
         }
+    }
 
-    private fun refreshDock() {
-        dock.removeAllViews()
+    private fun addCell(g: GridLayout, v: View) {
+        g.addView(v, GridLayout.LayoutParams().apply {
+            width = cardW
+            setMargins(dp(14), dp(10), dp(14), dp(22))
+        })
+    }
+
+    // ---------- home ----------
+
+    private fun refreshHome() {
+        home.removeAllViews()
         for (p in favs()) {
             val intent = launchIntent(p) ?: continue
-            val icon = try { packageManager.getApplicationIcon(p) } catch (e: Exception) { continue }
-            dock.addView(tile(icon, appLabel(p), { launch(intent) }, {
+            val a = art(p) ?: continue
+            addCell(home, card(a, appLabel(p), false, { launch(intent) }, {
                 val l = favs(); l.remove(p); saveFavs(l)
                 Toast.makeText(this, "Removed ${appLabel(p)}", Toast.LENGTH_SHORT).show()
-                refreshDock()
+                refreshHome()
             }))
         }
-        dock.addView(tile(glyph("+"), "All apps", { openPicker() }, null))
-        dock.addView(tile(glyph("..."), "Settings", { openSettings() }, null))
-        dock.getChildAt(0)?.requestFocus()
+        addCell(home, card(Art(glyph("+", 150f), false), "All Apps", false, { openPicker() }, null))
+        addCell(home, card(Art(glyph("⚙", 130f), false), "Settings", false, { openSettings() }, null))
+        home.getChildAt(0)?.requestFocus()
     }
 
     private fun launch(i: Intent) {
@@ -318,10 +381,10 @@ class MainActivity : Activity() {
         Toast.makeText(this, "Settings not found", Toast.LENGTH_SHORT).show()
     }
 
-    // ---------- app picker ----------
+    // ---------- all apps ----------
 
     private fun openPicker() {
-        grid.removeAllViews()
+        pickerGrid.removeAllViews()
         val seen = HashSet<String>()
         val list = ArrayList<ResolveInfo>()
         for (cat in listOf(Intent.CATEGORY_LEANBACK_LAUNCHER, Intent.CATEGORY_LAUNCHER)) {
@@ -333,42 +396,25 @@ class MainActivity : Activity() {
         }
         list.sortBy { it.loadLabel(packageManager).toString().lowercase() }
 
+        val current = favs()
         for (r in list) {
             val pkg = r.activityInfo.packageName
             val name = r.loadLabel(packageManager).toString()
-            val icon = ImageView(this).apply {
-                setImageDrawable(r.loadIcon(packageManager))
-                layoutParams = LinearLayout.LayoutParams(dp(64), dp(64))
-            }
-            val label = TextView(this).apply {
-                setTextColor(Color.WHITE); textSize = 14f; maxLines = 1
-                ellipsize = TextUtils.TruncateAt.END; gravity = Gravity.CENTER
-                text = if (favs().contains(pkg)) "* $name" else name
-            }
-            val cell = LinearLayout(this).apply {
-                orientation = LinearLayout.VERTICAL
-                gravity = Gravity.CENTER
-                isFocusable = true
-                setPadding(dp(8), dp(8), dp(8), dp(8))
-                addView(icon); addView(label)
-                setOnFocusChangeListener { v, f -> v.background = if (f) ring() else null }
-                setOnClickListener {
-                    val l = favs()
-                    if (l.contains(pkg)) l.remove(pkg) else l.add(pkg)
-                    saveFavs(l)
-                    label.text = if (l.contains(pkg)) "* $name" else name
-                }
-            }
-            grid.addView(cell, GridLayout.LayoutParams().apply {
-                width = dp(170); height = dp(130); setMargins(dp(6), dp(6), dp(6), dp(6))
-            })
+            val a = art(pkg) ?: continue
+            fun title(on: Boolean) = if (on) "✓  $name" else name
+            addCell(pickerGrid, card(a, title(current.contains(pkg)), true, { label ->
+                val l = favs()
+                if (l.contains(pkg)) l.remove(pkg) else l.add(pkg)
+                saveFavs(l)
+                label.text = title(l.contains(pkg))
+            }, null))
         }
         picker.visibility = View.VISIBLE
-        grid.post { grid.getChildAt(0)?.requestFocus() }
+        pickerGrid.post { pickerGrid.getChildAt(0)?.requestFocus() }
     }
 
     private fun closePicker() {
         picker.visibility = View.GONE
-        refreshDock()
+        refreshHome()
     }
 }
