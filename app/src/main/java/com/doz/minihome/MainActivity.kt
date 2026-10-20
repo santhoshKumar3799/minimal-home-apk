@@ -60,8 +60,8 @@ class MainActivity : Activity() {
 
     // First-run dock. Only apps actually installed are used; edit later from "All apps".
     private val defaults = listOf(
-        "com.netflix.ninja", "com.amazon.firetv.youtube", "com.amazon.firebat",
-        "com.google.android.youtube.tv", "in.startv.hotstar", "org.xbmc.kodi"
+        "com.amazon.firetv.youtube", "com.netflix.ninja", "com.amazon.firebat",
+        "in.startv.hotstar", "com.fancode.tv", "tv.airtel.xstream.tvapp", "com.amazon.venezia"
     )
 
     private val rot = object : Runnable {
