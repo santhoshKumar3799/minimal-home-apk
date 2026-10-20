@@ -345,6 +345,7 @@ class MainActivity : Activity() {
             // Wide/tall icons would be cropped; fit them on their own edge colour instead.
             if (!square) (face.background as? GradientDrawable)?.setColor(edgeColor(icon))
             face.addView(ImageView(this).apply {
+                background = null
                 setImageDrawable(icon)
                 scaleType = if (square) ImageView.ScaleType.CENTER_CROP else ImageView.ScaleType.FIT_CENTER
             }, FrameLayout.LayoutParams(-1, -1))
@@ -361,8 +362,9 @@ class MainActivity : Activity() {
 
     private fun glassTile(size: Int, kind: LineIcon.Kind, port: String?) = Tile(size, true) { face ->
         val s = size / 104f
-        face.addView(ImageView(this).apply {
-            setImageDrawable(LineIcon(kind, ui.pxf(1.6f) * 50f / 48f * s))
+        // Plain View, not ImageView: the Fire OS theme gives ImageViews a dark default background.
+        face.addView(View(this).apply {
+            background = LineIcon(kind, ui.pxf(1.6f) * 50f / 48f * s)
         }, FrameLayout.LayoutParams((ui.px(50f) * s).toInt(), (ui.px(50f) * s).toInt(), Gravity.CENTER).apply {
             if (port != null) bottomMargin = (ui.px(28f) * s).toInt()
         })
