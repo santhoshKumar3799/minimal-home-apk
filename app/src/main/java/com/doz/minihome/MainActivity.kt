@@ -472,6 +472,7 @@ class MainActivity : Activity() {
     }
 
     private fun openSettings() {
+        HomeWatcher.pause(4000)
         val options = listOf(
             Intent(Settings.ACTION_SETTINGS),
             packageManager.getLeanbackLaunchIntentForPackage("com.amazon.tv.settings.v2"),

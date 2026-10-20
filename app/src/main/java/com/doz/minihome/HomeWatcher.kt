@@ -2,6 +2,7 @@ package com.doz.minihome
 
 import android.accessibilityservice.AccessibilityService
 import android.content.Intent
+import android.os.SystemClock
 import android.view.accessibility.AccessibilityEvent
 
 /**
@@ -14,6 +15,7 @@ class HomeWatcher : AccessibilityService() {
     override fun onAccessibilityEvent(e: AccessibilityEvent?) {
         if (e?.eventType != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) return
         if (e.packageName?.toString() != AMAZON_LAUNCHER) return
+        if (SystemClock.uptimeMillis() < pauseUntil) return
         if (e.className?.toString()?.contains("HomeActivity") != true) return
         startActivity(Intent(this, MainActivity::class.java).addFlags(
             Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_REORDER_TO_FRONT or Intent.FLAG_ACTIVITY_NO_ANIMATION))
@@ -21,5 +23,12 @@ class HomeWatcher : AccessibilityService() {
 
     override fun onInterrupt() {}
 
-    companion object { const val AMAZON_LAUNCHER = "com.amazon.tv.launcher" }
+    companion object {
+        const val AMAZON_LAUNCHER = "com.amazon.tv.launcher"
+
+        // Fire OS Settings lives in the Amazon launcher and passes through its HomeActivity on
+        // the way in, so stand down briefly when we open it ourselves.
+        @Volatile private var pauseUntil = 0L
+        fun pause(ms: Long) { pauseUntil = SystemClock.uptimeMillis() + ms }
+    }
 }
